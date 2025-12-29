@@ -1,6 +1,7 @@
 import { AppProps } from 'next/app';
 import Head from 'next/head';
 import { FC } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { ContextProvider } from '../contexts/ContextProvider';
 import { AppBar } from '../components/AppBar';
 import { ContentContainer } from '../components/ContentContainer';
@@ -25,6 +26,7 @@ const App: FC<AppProps> = ({ Component, pageProps }) => {
                 <Footer/>
               </ContentContainer>
             </div>
+            <Analytics />
           </ContextProvider>
         </>
     );
