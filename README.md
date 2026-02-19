@@ -90,7 +90,3 @@ This game was created for the Scrolly x Superteam UK No-Code Game Jam.
 Theme: Scrolly Feed / Hypercasual
 
 Goal: Create an engaging mini-game using AI assistance.
-
-📄 License
-
-MIT License. Free to play, free to scroll.
