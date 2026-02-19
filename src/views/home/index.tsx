@@ -880,21 +880,44 @@ export const GameSandbox: FC = () => {
     }
     ctx.globalAlpha = 1;
 
+    // Optimized: Batch platform rendering to minimize state changes
+    const normalPlats: { p: typeof s.platforms[0], py: number }[] = [];
+    const boostPlats: { p: typeof s.platforms[0], py: number }[] = [];
+
     s.platforms.forEach(p => {
       const hoverY = Math.sin(p.osc) * 3;
       const py = p.y + hoverY;
-
-      ctx.shadowBlur = s.currentLevel > 7 ? 25 : 15;
-      ctx.shadowColor = p.type === 1 ? '#ffffff' : theme.plat;
-      ctx.fillStyle = p.type === 1 ? '#ffffff' : theme.plat;
-
-      ctx.beginPath();
-      ctx.roundRect(p.x, py, p.w, p.h, 6);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "rgba(255,255,255,0.3)";
-      ctx.fillRect(p.x, py, p.w, 4);
+      if (p.type === 1) boostPlats.push({ p, py });
+      else normalPlats.push({ p, py });
     });
+
+    // Batch 1: Normal Platforms
+    if (normalPlats.length > 0) {
+      ctx.shadowBlur = s.currentLevel > 7 ? 25 : 15;
+      ctx.shadowColor = theme.plat;
+      ctx.fillStyle = theme.plat;
+      ctx.beginPath();
+      normalPlats.forEach(({ p, py }) => ctx.roundRect(p.x, py, p.w, p.h, 6));
+      ctx.fill();
+    }
+
+    // Batch 2: Boost Platforms
+    if (boostPlats.length > 0) {
+      ctx.shadowBlur = s.currentLevel > 7 ? 25 : 15;
+      ctx.shadowColor = '#ffffff';
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      boostPlats.forEach(({ p, py }) => ctx.roundRect(p.x, py, p.w, p.h, 6));
+      ctx.fill();
+    }
+
+    // Batch 3: Highlights (All)
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.beginPath();
+    normalPlats.forEach(({ p, py }) => ctx.rect(p.x, py, p.w, 4));
+    boostPlats.forEach(({ p, py }) => ctx.rect(p.x, py, p.w, 4));
+    ctx.fill();
 
     s.enemies.forEach(e => {
       const floatY = e.y;
