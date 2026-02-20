@@ -104,6 +104,8 @@ const BOOSTERS = [
   { type: 2, name: "SHARD", val: 1500, color: "#f43f5e", chance: 0.10, radius: 10 },
   { type: 3, name: "CORE", val: 5000, color: "#d8b4fe", chance: 0.04, radius: 12 },
   { type: 4, name: "SOL", val: 10000, color: "#14F195", chance: 0.01, radius: 14, glow: true },
+  { type: 5, name: "SHIELD", val: 0, color: "#3b82f6", chance: 0.03, radius: 12 },
+  { type: 6, name: "MAGNET", val: 0, color: "#a855f7", chance: 0.03, radius: 12 },
 ];
 
 const LEVEL_THRESHOLD = 5000;
@@ -138,6 +140,9 @@ export const GameSandbox: FC = () => {
   const [gameState, setGameState] = useState<'START' | 'PLAYING' | 'GAMEOVER'>('START');
   const [deathQuote, setDeathQuote] = useState("");
   const [bossProgress, setBossProgress] = useState(0);
+  const [lifetimeBits, setLifetimeBits] = useState(0);
+  const [upgrades, setUpgrades] = useState({ jump: 0, fireRate: 0, health: 0 });
+  const [showShop, setShowShop] = useState(false);
 
   const state = useRef({
     player: { x: 0, y: 0, vx: 0, vy: 0, w: 24, h: 24, type: 0, trail: [] as { x: number, y: number, age: number }[] },
@@ -147,7 +152,7 @@ export const GameSandbox: FC = () => {
     flashEffect: 0,
     damageEffect: 0,
     gameTime: 0,
-    platforms: [] as { x: number, y: number, w: number, h: number, type: number, visited: boolean, osc: number, oscSpeed: number }[],
+    platforms: [] as { x: number, y: number, w: number, h: number, type: number, visited: boolean, osc: number, oscSpeed: number, crumbleTimer: number, isSlippery: boolean }[],
     collectibles: [] as { x: number, y: number, r: number, active: boolean, osc: number, boosterId: number }[],
     hazards: [] as { x: number, y: number, w: number, h: number, vx: number, vy: number, type: 'DEBRIS' | 'LASER', shape: number, angle: number, color?: string }[],
     enemies: [] as { id: number, x: number, y: number, w: number, h: number, vx: number, vy: number, hp: number, maxHp: number, type: number, slot: number }[],
@@ -170,12 +175,46 @@ export const GameSandbox: FC = () => {
     bossSpawnedCount: 0,
     bossFireTimer: 0,
     bossFireIndex: 0,
+    shield: 0, // Number of shield layers
+    magnetTimer: 0, // Remaining magnet time in seconds
   });
 
   useEffect(() => {
-    const saved = localStorage.getItem('neon-rise-hs');
-    if (saved) setHighScore(parseInt(saved));
+    const savedHS = localStorage.getItem('neon-rise-hs');
+    if (savedHS) setHighScore(parseInt(savedHS));
+
+    const savedBits = localStorage.getItem('neon-rise-bits');
+    if (savedBits) setLifetimeBits(parseInt(savedBits));
+
+    const savedUpgrades = localStorage.getItem('neon-rise-upgrades');
+    if (savedUpgrades) setUpgrades(JSON.parse(savedUpgrades));
   }, []);
+
+  const buyUpgrade = (type: 'jump' | 'fireRate' | 'health') => {
+    const currentLevel = upgrades[type];
+    const maxLevels = { jump: 5, fireRate: 5, health: 3 };
+    if (currentLevel >= maxLevels[type]) return;
+
+    const costs = {
+      jump: (currentLevel + 1) * 200,
+      fireRate: (currentLevel + 1) * 150,
+      health: (currentLevel + 1) * 500
+    };
+    const cost = costs[type];
+
+    if (lifetimeBits >= cost) {
+      const newBits = lifetimeBits - cost;
+      setLifetimeBits(newBits);
+      localStorage.setItem('neon-rise-bits', newBits.toString());
+
+      const newUpgrades = { ...upgrades, [type]: currentLevel + 1 };
+      setUpgrades(newUpgrades);
+      localStorage.setItem('neon-rise-upgrades', JSON.stringify(newUpgrades));
+      playSound('powerup');
+    } else {
+      playSound('hazard');
+    }
+  };
 
   const initAudio = () => {
     if (!audioCtxRef.current) {
@@ -243,8 +282,6 @@ export const GameSandbox: FC = () => {
     state.current.flashEffect = 0;
     state.current.damageEffect = 0;
     state.current.lastDebrisTime = 0;
-    state.current.hp = 2;
-    state.current.maxHp = 2;
     state.current.invincibleUntil = 0;
     state.current.currentLevel = 1;
     state.current.lastShotTime = 0;
@@ -252,9 +289,17 @@ export const GameSandbox: FC = () => {
     state.current.bossSpawnedCount = 0;
     state.current.bossFireTimer = 0;
     state.current.bossFireIndex = 0;
+    state.current.shield = 0;
+    state.current.magnetTimer = 0;
+
+    // Apply Upgrades
+    const startHp = 2 + upgrades.health;
+    state.current.hp = startHp;
+    state.current.maxHp = startHp;
+    setHp(startHp);
+
     setScore(0);
     setLevel(1);
-    setHp(2);
     setBossProgress(0);
 
     state.current.player = {
@@ -281,14 +326,18 @@ export const GameSandbox: FC = () => {
     }
 
     state.current.stars = [];
-    for (let i = 0; i < 50; i++) {
-      state.current.stars.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        size: Math.random() * 2,
-        alpha: Math.random(),
-        speed: 0.1 + Math.random() * 0.5
-      });
+    const starCounts = [60, 40, 20]; // Background, Midground, Foreground
+    for (let layer = 0; layer < 3; layer++) {
+      for (let i = 0; i < starCounts[layer]; i++) {
+        state.current.stars.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          size: (layer + 1) * 0.8 + Math.random(),
+          alpha: 0.2 + Math.random() * 0.8,
+          speed: (layer + 1) * 0.2, // This will be the parallax factor
+          layer // Add layer for rendering
+        } as any);
+      }
     }
 
     state.current.particles = [];
@@ -314,9 +363,13 @@ export const GameSandbox: FC = () => {
 
     const boostChance = Math.min(0.5, 0.05 + (currentLvl * 0.02));
     const moveChance = currentLvl > 1 ? Math.min(0.6, 0.1 + (currentLvl * 0.03)) : 0;
+    const specialChance = currentLvl > 5 ? Math.min(0.4, 0.05 + (currentLvl * 0.02)) : 0;
 
     if (r < boostChance) type = 1;
     else if (r < boostChance + moveChance) type = 2;
+    else if (r < boostChance + moveChance + specialChance) {
+      type = Math.random() > 0.5 ? 3 : 4; // Crumbling or Slippery
+    }
     else type = 0;
 
     if (currentLvl >= 10) w *= 0.8;
@@ -327,7 +380,9 @@ export const GameSandbox: FC = () => {
       type,
       visited: false,
       osc: Math.random() * Math.PI * 2,
-      oscSpeed: 0.02 + Math.random() * 0.05
+      oscSpeed: 0.02 + Math.random() * 0.05,
+      crumbleTimer: -1,
+      isSlippery: type === 4
     });
 
     if (Math.random() > 0.50) {
@@ -335,9 +390,11 @@ export const GameSandbox: FC = () => {
       let boosterId = 0;
 
       if (roll < BOOSTERS[4].chance) boosterId = 4;
-      else if (roll < BOOSTERS[3].chance + 0.05 && currentLvl > 3) boosterId = 3;
-      else if (roll < BOOSTERS[2].chance + 0.15) boosterId = 2;
-      else if (roll < BOOSTERS[1].chance + 0.35) boosterId = 1;
+      else if (roll < BOOSTERS[6].chance + 0.02 && currentLvl > 5) boosterId = 6; // Magnet
+      else if (roll < BOOSTERS[5].chance + 0.04 && currentLvl > 2) boosterId = 5; // Shield
+      else if (roll < BOOSTERS[3].chance + 0.06 && currentLvl > 3) boosterId = 3;
+      else if (roll < BOOSTERS[2].chance + 0.16) boosterId = 2;
+      else if (roll < BOOSTERS[1].chance + 0.36) boosterId = 1;
       else boosterId = 0;
 
       state.current.collectibles.push({
@@ -428,17 +485,18 @@ export const GameSandbox: FC = () => {
 
     const size = 40;
     state.current.bossSpawnedCount++; // Increment spawned count
+    const type = Math.floor(Math.random() * 2);
     state.current.enemies.push({
       id: Math.random(),
       x: slot * slotWidth + (slotWidth - size) / 2,
       y: camY - 100,
       w: size,
       h: size,
-      vx: 0,
+      vx: type === 1 ? (Math.random() > 0.5 ? 3 : -3) : 0,
       vy: 0,
       hp: 5,
       maxHp: 5,
-      type: Math.floor(Math.random() * 2),
+      type: type,
       slot: slot
     });
   };
@@ -544,7 +602,9 @@ export const GameSandbox: FC = () => {
             type: 0,
             visited: true, // No points for safety
             osc: 0,
-            oscSpeed: 0
+            oscSpeed: 0,
+            crumbleTimer: -1,
+            isSlippery: false
           });
 
           // 4. Spawn a few ahead to prevent empty screen
@@ -576,7 +636,8 @@ export const GameSandbox: FC = () => {
     // --- PHYSICS & CONTROLS ---
 
     // Auto-Fire in Boss Mode (Player)
-    if (isBossLevel && s.gameTime - s.lastShotTime > 0.4) {
+    const fireDelay = Math.max(0.2, 0.4 - (upgrades.fireRate * 0.05));
+    if (isBossLevel && s.gameTime - s.lastShotTime > fireDelay) {
       s.lastShotTime = s.gameTime;
       s.bullets.push({
         x: s.player.x + s.player.w / 2,
@@ -589,6 +650,7 @@ export const GameSandbox: FC = () => {
     }
 
     // Movement
+    // Movement
     if (s.inputs.touching) {
       const targetX = s.inputs.touchX - s.player.w / 2;
       const diff = targetX - s.player.x;
@@ -597,7 +659,13 @@ export const GameSandbox: FC = () => {
     } else {
       if (s.inputs.left) s.player.vx -= 1.8;
       if (s.inputs.right) s.player.vx += 1.8;
-      s.player.vx *= 0.88;
+
+      // Handle Slippery Friction
+      const onSlippery = s.platforms.some(p => p.isSlippery &&
+        s.player.x + s.player.w > p.x && s.player.x < p.x + p.w &&
+        Math.abs(s.player.y + s.player.h - p.y) < 10);
+
+      s.player.vx *= onSlippery ? 0.98 : 0.88;
     }
     s.player.x += s.player.vx;
 
@@ -636,15 +704,22 @@ export const GameSandbox: FC = () => {
       if (s.score > 12000) s.player.type = 3;
     }
 
-    // Death (Fall)
     if (!isBossLevel && s.player.y > s.cameraY + height + 100) {
       playSound('die');
       setDeathQuote(FUN_FACTS[Math.floor(Math.random() * FUN_FACTS.length)]);
       setGameState('GAMEOVER');
-      if (Math.floor(s.score) > highScore) {
-        setHighScore(Math.floor(s.score));
-        localStorage.setItem('neon-rise-hs', Math.floor(s.score).toString());
+
+      // Save stats
+      const finalScore = Math.floor(s.score);
+      if (finalScore > highScore) {
+        setHighScore(finalScore);
+        localStorage.setItem('neon-rise-hs', finalScore.toString());
       }
+
+      // Save Bits (approx 1 bit per 50 points or collect them directly)
+      // Actually bits are collected items. Let's track how many were collected in this run.
+      // For now, let's just use 10% of score as bits for simplicity, or we can track them.
+      // I'll track them by adding to lifetimeBits directly during collection.
       return;
     }
 
@@ -655,6 +730,17 @@ export const GameSandbox: FC = () => {
       s.platforms.forEach((p, index) => {
         p.osc += p.oscSpeed;
         if (p.type === 2) p.x += Math.cos(p.osc) * 2.5;
+
+        // Handle Crumbling Platforms
+        if (p.crumbleTimer > 0) {
+          p.crumbleTimer -= 0.05;
+          if (p.crumbleTimer <= 0) {
+            s.platforms.splice(index, 1);
+            spawnParticles(p.x + p.w / 2, p.y + p.h / 2, "#fff", 15, 3);
+            playSound('hazard');
+            return;
+          }
+        }
 
         if (p.y > s.cameraY + height + 50) {
           s.platforms.splice(index, 1);
@@ -738,6 +824,12 @@ export const GameSandbox: FC = () => {
       const sway = Math.sin(s.gameTime * 0.05 + e.id) * 10;
       e.y += (targetY + sway - e.y) * 0.05;
 
+      // Horizontal movement for Interceptor Drones (Type 1)
+      if (e.type === 1) {
+        e.x += e.vx;
+        if (e.x < 0 || e.x > width - e.w) e.vx *= -1; // Bounce
+      }
+
       if (e.y > s.cameraY + height + 100) s.enemies.splice(i, 1);
     }
 
@@ -756,9 +848,17 @@ export const GameSandbox: FC = () => {
         s.player.y + s.player.h > h.y
       ) {
         if (s.gameTime > s.invincibleUntil) {
+          if (s.shield > 0) {
+            s.shield--;
+            s.invincibleUntil = s.gameTime + 4;
+            s.shake = 10;
+            playSound('powerup');
+            addFloatingText(s.player.x, s.player.y, "SHIELD BROKE!", "#3b82f6", 1.5);
+            s.hazards.splice(i, 1); // Destroy hazard that hit shield
+            continue;
+          }
           s.hp--;
           setHp(s.hp);
-          // FIXED: Reduced invincibility from 60 (20s) to 4 (1.3s)
           s.invincibleUntil = s.gameTime + 4;
           s.damageEffect = 0.5;
           s.shake = 15;
@@ -768,6 +868,12 @@ export const GameSandbox: FC = () => {
             playSound('die');
             setDeathQuote(h.type === 'LASER' ? "Shot down!" : "Watch out for debris!");
             setGameState('GAMEOVER');
+
+            const finalScore = Math.floor(s.score);
+            if (finalScore > highScore) {
+              setHighScore(finalScore);
+              localStorage.setItem('neon-rise-hs', finalScore.toString());
+            }
             return;
           }
         }
@@ -789,11 +895,18 @@ export const GameSandbox: FC = () => {
           s.player.y + s.player.h > py &&
           s.player.y + s.player.h < py + 25
         ) {
-          s.player.vy = p.type === 1 ? -24 : -15;
-          s.player.y = py - s.player.h;
-          s.shake = p.type === 1 ? 5 : 2;
+          const jumpBoost = 1 + (upgrades.jump * 0.05);
+          s.player.vy = (p.type === 1 ? -24 : -15) * jumpBoost;
           playSound(p.type === 1 ? 'powerup' : 'jump');
-          spawnParticles(s.player.x + s.player.w / 2, s.player.y + s.player.h, p.type === 1 ? '#fff' : theme.plat, 6, 4);
+          s.player.y = py - s.player.h;
+          spawnParticles(s.player.x + s.player.w / 2, s.player.y + s.player.h, p.type === 1 ? '#fff' : theme.plat, p.type === 1 ? 20 : 12, 6);
+          s.shake = p.type === 1 ? 8 : 4; // Increased shake for better feel
+
+          // Start Crumbling Timer
+          if (p.type === 3 && p.crumbleTimer < 0) {
+            p.crumbleTimer = 0.8; // 0.8 seconds to crumble
+            addFloatingText(p.x + p.w / 2, p.y, "CRUMBLING!", "#fff", 1);
+          }
 
           if (!p.visited) {
             p.visited = true;
@@ -810,21 +923,61 @@ export const GameSandbox: FC = () => {
       });
     }
 
+    if (s.magnetTimer > 0) s.magnetTimer -= 0.05;
+
     s.collectibles.forEach(c => {
       if (!c.active) return;
-      const dx = (s.player.x + s.player.w / 2) - c.x;
-      const dy = (s.player.y + s.player.h / 2) - (c.y + Math.sin(s.gameTime + c.osc) * 5);
+
+      const px = s.player.x + s.player.w / 2;
+      const py = s.player.y + s.player.h / 2;
+      const booster = BOOSTERS[c.boosterId];
+
+      // Magnetism
+      if (s.magnetTimer > 0) {
+        const dx = px - c.x;
+        const dy = py - c.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 200) {
+          c.x += (dx / dist) * 8;
+          c.y += (dy / dist) * 8;
+        }
+      }
+
+      const dx = px - c.x;
+      const dy = py - (c.y + Math.sin(s.gameTime + c.osc) * 5);
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist < s.player.w / 2 + c.r + 5) {
         c.active = false;
-        const booster = BOOSTERS[c.boosterId];
         s.score += booster.val;
         s.shake = 4 + c.boosterId;
         playSound('collect', c.boosterId);
-        addFloatingText(c.x, c.y, c.boosterId === 4 ? "SOL POWER!" : `+${booster.val}`, booster.color, c.boosterId === 4 ? 2 : 1.2);
-        spawnParticles(c.x, c.y, booster.color, 10 + (c.boosterId * 5), 8);
-        if (c.boosterId === 4) { s.player.vy = -35; s.shake = 20; }
+
+        // Add to lifetime bits if it's BIT or BYTE
+        if (c.boosterId === 0 || c.boosterId === 1) {
+          const bitVal = c.boosterId === 0 ? 1 : 5;
+          setLifetimeBits(prev => {
+            const next = prev + bitVal;
+            localStorage.setItem('neon-rise-bits', next.toString());
+            return next;
+          });
+        }
+
+        let label = `+${booster.val}`;
+        if (c.boosterId === 4) label = "SOL POWER!";
+        if (c.boosterId === 5) { label = "SHIELD UP!"; s.shield = Math.min(2, s.shield + 1); }
+        if (c.boosterId === 6) { label = "MAGNETIZED!"; s.magnetTimer = 10; } // 10 seconds
+
+        addFloatingText(c.x, c.y, label, booster.color, (c.boosterId === 4 || c.boosterId >= 5) ? 2 : 1.2);
+
+        if (c.boosterId === 4) {
+          s.player.vy = -35;
+          s.shake = 40;
+          s.flashEffect = 1.0;
+          spawnParticles(c.x, c.y, booster.color, 100, 20);
+        } else {
+          spawnParticles(c.x, c.y, booster.color, 15 + (c.boosterId * 5), 10);
+        }
       }
     });
 
@@ -843,13 +996,24 @@ export const GameSandbox: FC = () => {
     }
 
     const pulse = Math.sin(s.gameTime * 0.5) * 0.05;
+
+    // --- PARALLAX STARS ---
     s.stars.forEach(star => {
-      const relativeY = (star.y - s.cameraY * 0.5 + s.gameTime * star.speed * 10) % height;
+      // Background stars (layer 0) move slowest, foreground (layer 2) fastest
+      const parallaxFactor = [0.1, 0.3, 0.6][(star as any).layer || 0];
+      const scrollSpeed = (star as any).speed * 5;
+      const relativeY = (star.y - s.cameraY * parallaxFactor + s.gameTime * scrollSpeed) % height;
       const drawY = relativeY < 0 ? relativeY + height : relativeY;
+
       ctx.globalAlpha = star.alpha * (0.5 + pulse);
 
       const isBoss = s.currentLevel % 5 === 0;
-      ctx.fillStyle = isBoss ? "#ef4444" : (s.currentLevel >= 8 ? `hsl(${(s.gameTime * 20 + star.x) % 360}, 70%, 70%)` : "white");
+      let color = "white";
+      if (isBoss) color = "#ef4444";
+      else if (s.currentLevel >= 8) color = `hsl(${(s.gameTime * 20 + star.x) % 360}, 70%, 70%)`;
+      else if ((star as any).layer === 2) color = theme.plat; // Foreground stars tint with theme
+
+      ctx.fillStyle = color;
 
       ctx.beginPath();
       if (s.warpEffect > 0.1) {
@@ -860,6 +1024,30 @@ export const GameSandbox: FC = () => {
       }
       ctx.fill();
     });
+    ctx.globalAlpha = 1;
+
+    // --- ATMOSPHERIC GRID ---
+    ctx.save();
+    ctx.translate(0, -s.cameraY * 0.2); // Slow scroll for grid
+    ctx.strokeStyle = theme.plat;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.05 + Math.sin(s.gameTime * 0.3) * 0.02; // Pulsing alpha
+
+    const atmosGridSize = 100;
+    const atmosStart = Math.floor(s.cameraY * 0.2 / atmosGridSize) * atmosGridSize;
+    for (let x = 0; x < width; x += atmosGridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, atmosStart);
+      ctx.lineTo(x, atmosStart + height + atmosGridSize);
+      ctx.stroke();
+    }
+    for (let y = atmosStart; y < atmosStart + height + atmosGridSize; y += atmosGridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+    ctx.restore();
     ctx.globalAlpha = 1;
 
     ctx.translate(0, -s.cameraY);
@@ -1060,8 +1248,40 @@ export const GameSandbox: FC = () => {
     });
     ctx.globalAlpha = 1;
 
+    // --- PLAYER DRAWING ---
     const px = s.player.x + s.player.w / 2;
     const py = s.player.y + s.player.h / 2;
+
+    // Magnet Aura
+    if (s.magnetTimer > 0) {
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.beginPath();
+      ctx.globalAlpha = 0.2 + Math.sin(s.gameTime * 5) * 0.1;
+      ctx.strokeStyle = "#a855f7";
+      ctx.lineWidth = 4;
+      ctx.setLineDash([5, 5]);
+      ctx.arc(0, 0, s.player.w * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Shield Circle
+    if (s.shield > 0) {
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.beginPath();
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 2 + s.shield * 2;
+      ctx.arc(0, 0, s.player.w * 1.2, 0, Math.PI * 2);
+      ctx.stroke();
+      // Inner glow
+      ctx.globalAlpha = 0.1;
+      ctx.fillStyle = "#3b82f6";
+      ctx.fill();
+      ctx.restore();
+    }
 
     ctx.fillStyle = theme.player;
     ctx.shadowColor = theme.player;
@@ -1345,6 +1565,13 @@ export const GameSandbox: FC = () => {
           >
             PLAY
           </button>
+
+          <button
+            onClick={() => setShowShop(true)}
+            className="w-full max-w-[200px] py-2 mt-4 bg-slate-800 text-white font-bold text-sm rounded-full border border-white/20 hover:bg-slate-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+          >
+            🛒 SHOP ({lifetimeBits} BITS)
+          </button>
         </div>
       )}
 
@@ -1372,6 +1599,107 @@ export const GameSandbox: FC = () => {
           >
             RETRY
           </button>
+
+          <button
+            onClick={() => setShowShop(true)}
+            className="w-full max-w-[200px] py-2 mt-4 bg-slate-800 text-white font-bold text-sm rounded-full border border-white/20 hover:bg-slate-700 active:scale-95 transition-all"
+          >
+            🛒 UPGRADES
+          </button>
+        </div>
+      )}
+
+      {/* SHOP OVERLAY */}
+      {showShop && (
+        <div className="absolute inset-0 bg-slate-950/95 z-30 p-6 flex flex-col animate-in slide-in-from-bottom duration-300">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-black italic text-white tracking-tight">BIT SHOP</h2>
+            <button
+              onClick={() => setShowShop(false)}
+              className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="bg-white/5 rounded-2xl p-4 mb-6 border border-white/10 flex justify-between items-center">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Available Bits</span>
+            <span className="text-2xl font-black text-yellow-400">{lifetimeBits}</span>
+          </div>
+
+          <div className="space-y-4 overflow-y-auto pr-2">
+            {/* JUMP UPGRADE */}
+            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <h3 className="font-bold text-white text-sm">JUMP BOOST</h3>
+                  <p className="text-[10px] text-slate-400">+5% Jump Height per level</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 uppercase">Level</div>
+                  <div className="text-white font-bold">{upgrades.jump}/5</div>
+                </div>
+              </div>
+              <button
+                disabled={upgrades.jump >= 5}
+                onClick={() => buyUpgrade('jump')}
+                className={`w-full py-2 rounded-xl text-xs font-bold transition-all ${upgrades.jump >= 5 ? 'bg-slate-800 text-slate-500' : 'bg-blue-600 text-white shadow-lg active:scale-95'}`}
+              >
+                {upgrades.jump >= 5 ? 'MAX LEVEL' : `UPGRADE (${(upgrades.jump + 1) * 200} BITS)`}
+              </button>
+            </div>
+
+            {/* FIRE RATE UPGRADE */}
+            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <h3 className="font-bold text-white text-sm">QUICK FIRE</h3>
+                  <p className="text-[10px] text-slate-400">-0.05s Shot Delay</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 uppercase">Level</div>
+                  <div className="text-white font-bold">{upgrades.fireRate}/5</div>
+                </div>
+              </div>
+              <button
+                disabled={upgrades.fireRate >= 5}
+                onClick={() => buyUpgrade('fireRate')}
+                className={`w-full py-2 rounded-xl text-xs font-bold transition-all ${upgrades.fireRate >= 5 ? 'bg-slate-800 text-slate-500' : 'bg-purple-600 text-white shadow-lg active:scale-95'}`}
+              >
+                {upgrades.fireRate >= 5 ? 'MAX LEVEL' : `UPGRADE (${(upgrades.fireRate + 1) * 150} BITS)`}
+              </button>
+            </div>
+
+            {/* HEALTH UPGRADE */}
+            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <h3 className="font-bold text-white text-sm">EXTRA ARMOR</h3>
+                  <p className="text-[10px] text-slate-400">+1 Initial Heart</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 uppercase">Level</div>
+                  <div className="text-white font-bold">{upgrades.health}/3</div>
+                </div>
+              </div>
+              <button
+                disabled={upgrades.health >= 3}
+                onClick={() => buyUpgrade('health')}
+                className={`w-full py-2 rounded-xl text-xs font-bold transition-all ${upgrades.health >= 3 ? 'bg-slate-800 text-slate-500' : 'bg-red-600 text-white shadow-lg active:scale-95'}`}
+              >
+                {upgrades.health >= 3 ? 'MAX LEVEL' : `UPGRADE (${(upgrades.health + 1) * 500} BITS)`}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-auto pt-6">
+            <button
+              onClick={() => setShowShop(false)}
+              className="w-full py-4 bg-white text-black font-black rounded-full"
+            >
+              DONE
+            </button>
+          </div>
         </div>
       )}
     </div>
