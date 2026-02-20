@@ -1547,7 +1547,7 @@ export const GameSandbox: FC = () => {
       )}
 
       {/* START SCREEN */}
-      {gameState === 'START' && (
+      {gameState === 'START' && !showShop && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-20 p-6 text-center backdrop-blur-sm">
           <div className="w-24 h-24 mb-6 rounded-3xl bg-gradient-to-tr from-purple-500 to-pink-500 shadow-[0_0_50px_rgba(236,72,153,0.6)] flex items-center justify-center animate-bounce ring-4 ring-white/10">
             <span className="text-5xl drop-shadow-lg">👾</span>
@@ -1576,7 +1576,7 @@ export const GameSandbox: FC = () => {
       )}
 
       {/* GAME OVER */}
-      {gameState === 'GAMEOVER' && (
+      {gameState === 'GAMEOVER' && !showShop && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/90 z-20 p-6 text-center animate-in fade-in duration-300">
           <div className="text-6xl mb-4 animate-pulse">💥</div>
           <h2 className="text-4xl font-black text-white mb-1 uppercase italic tracking-wider drop-shadow-xl">Wasted</h2>
@@ -1611,7 +1611,7 @@ export const GameSandbox: FC = () => {
 
       {/* SHOP OVERLAY */}
       {showShop && (
-        <div className="absolute inset-0 bg-slate-950/95 z-30 p-6 flex flex-col animate-in slide-in-from-bottom duration-300">
+        <div className="absolute inset-0 bg-slate-950 z-30 p-6 flex flex-col animate-in slide-in-from-bottom duration-300">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-black italic text-white tracking-tight">BIT SHOP</h2>
             <button
