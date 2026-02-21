@@ -27,9 +27,8 @@ export const HomeView: FC = () => {
           {/* Fake “feed card” top bar inside the phone */}
           <div className="flex items-center justify-between px-3 py-2 text-[10px] text-slate-400">
             <span className="rounded-full bg-white/5 px-2 py-1 text-[9px] uppercase tracking-wide">
-              Scrolly Game
+              Cyber Scroll
             </span>
-            <span className="text-[9px] opacity-70">#NoCodeJam</span>
           </div>
 
           {/* The game lives INSIDE this phone frame */}
@@ -175,8 +174,8 @@ export const GameSandbox: FC = () => {
     bossSpawnedCount: 0,
     bossFireTimer: 0,
     bossFireIndex: 0,
-    shield: 0, // Number of shield layers
-    magnetTimer: 0, // Remaining magnet time in seconds
+    shield: 0,
+    magnetTimer: 0,
   });
 
   useEffect(() => {
@@ -716,10 +715,6 @@ export const GameSandbox: FC = () => {
         localStorage.setItem('neon-rise-hs', finalScore.toString());
       }
 
-      // Save Bits (approx 1 bit per 50 points or collect them directly)
-      // Actually bits are collected items. Let's track how many were collected in this run.
-      // For now, let's just use 10% of score as bits for simplicity, or we can track them.
-      // I'll track them by adding to lifetimeBits directly during collection.
       return;
     }
 
