@@ -501,7 +501,11 @@ export const GameSandbox: FC = () => {
   };
 
   const spawnParticles = (x: number, y: number, color: string, count = 8, burst = 5) => {
-    for (let i = 0; i < count; i++) {
+    // Cap total particles for mobile performance
+    if (state.current.particles.length > 200) return;
+    const finalCount = Math.min(count, 200 - state.current.particles.length);
+
+    for (let i = 0; i < finalCount; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * burst;
       state.current.particles.push({
@@ -681,8 +685,8 @@ export const GameSandbox: FC = () => {
 
       // Auto-scroll camera
       s.cameraY -= 3;
-      s.score += 0.3;
-      if (Math.floor(s.gameTime) % 10 === 0) setScore(s.score);
+      s.score += 0.35;
+      if (Math.floor(s.gameTime * 2) % 2 === 0) setScore(Math.floor(s.score));
     } else {
       // PLATFORM MODE (Gravity)
       s.player.vy += 0.55;
@@ -696,7 +700,8 @@ export const GameSandbox: FC = () => {
       s.cameraY = targetCamY;
 
       if (!isBossLevel) s.score += diff * 0.3;
-      setScore(s.score);
+      // Throttle React state update
+      if (Math.floor(s.gameTime * 2) % 2 === 0) setScore(Math.floor(s.score));
 
       if (s.score > 2000) s.player.type = 1;
       if (s.score > 6000) s.player.type = 2;
@@ -845,11 +850,12 @@ export const GameSandbox: FC = () => {
         if (s.gameTime > s.invincibleUntil) {
           if (s.shield > 0) {
             s.shield--;
-            s.invincibleUntil = s.gameTime + 4;
-            s.shake = 10;
+            s.invincibleUntil = s.gameTime + 3; // Reduced invincibility time
+            s.shake = 15;
             playSound('powerup');
-            addFloatingText(s.player.x, s.player.y, "SHIELD BROKE!", "#3b82f6", 1.5);
-            s.hazards.splice(i, 1); // Destroy hazard that hit shield
+            addFloatingText(s.player.x, s.player.y, "SHIELD BROKE!", "#3b82f6", 1.8);
+            spawnParticles(s.player.x, s.player.y, "#3b82f6", 40, 10); // Better feedback
+            s.hazards.splice(i, 1);
             continue;
           }
           s.hp--;
@@ -992,56 +998,60 @@ export const GameSandbox: FC = () => {
 
     const pulse = Math.sin(s.gameTime * 0.5) * 0.05;
 
-    // --- PARALLAX STARS ---
+    // --- PARALLAX STARS (OPTIMIZED) ---
+    const isBoss = s.currentLevel % 5 === 0;
+    const starCycle = (s.gameTime * 20) % height;
+
     s.stars.forEach(star => {
-      // Background stars (layer 0) move slowest, foreground (layer 2) fastest
       const parallaxFactor = [0.1, 0.3, 0.6][(star as any).layer || 0];
       const scrollSpeed = (star as any).speed * 5;
       const relativeY = (star.y - s.cameraY * parallaxFactor + s.gameTime * scrollSpeed) % height;
       const drawY = relativeY < 0 ? relativeY + height : relativeY;
 
+      // Skip drawing if offscreen
+      if (drawY < -50 || drawY > height + 50) return;
+
       ctx.globalAlpha = star.alpha * (0.5 + pulse);
 
-      const isBoss = s.currentLevel % 5 === 0;
       let color = "white";
       if (isBoss) color = "#ef4444";
       else if (s.currentLevel >= 8) color = `hsl(${(s.gameTime * 20 + star.x) % 360}, 70%, 70%)`;
-      else if ((star as any).layer === 2) color = theme.plat; // Foreground stars tint with theme
+      else if ((star as any).layer === 2) color = theme.plat;
 
       ctx.fillStyle = color;
 
-      ctx.beginPath();
       if (s.warpEffect > 0.1) {
         const len = star.size * 40 * s.warpEffect;
-        ctx.rect(star.x, drawY, 2, len);
+        ctx.fillRect(star.x, drawY, 2, len);
       } else {
+        ctx.beginPath();
         ctx.arc(star.x, drawY, star.size, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.fill();
     });
     ctx.globalAlpha = 1;
+    ctx.globalAlpha = 1;
 
-    // --- ATMOSPHERIC GRID ---
+    // --- ATMOSPHERIC GRID (OPTIMIZED) ---
     ctx.save();
-    ctx.translate(0, -s.cameraY * 0.2); // Slow scroll for grid
+    ctx.translate(0, -s.cameraY * 0.2);
     ctx.strokeStyle = theme.plat;
     ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.05 + Math.sin(s.gameTime * 0.3) * 0.02; // Pulsing alpha
+    ctx.globalAlpha = 0.04 + Math.sin(s.gameTime * 0.3) * 0.02;
 
-    const atmosGridSize = 100;
+    const atmosGridSize = 120; // Increased size for fewer lines
     const atmosStart = Math.floor(s.cameraY * 0.2 / atmosGridSize) * atmosGridSize;
-    for (let x = 0; x < width; x += atmosGridSize) {
-      ctx.beginPath();
+
+    ctx.beginPath();
+    for (let x = 0; x <= width; x += atmosGridSize) {
       ctx.moveTo(x, atmosStart);
       ctx.lineTo(x, atmosStart + height + atmosGridSize);
-      ctx.stroke();
     }
     for (let y = atmosStart; y < atmosStart + height + atmosGridSize; y += atmosGridSize) {
-      ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(width, y);
-      ctx.stroke();
     }
+    ctx.stroke();
     ctx.restore();
     ctx.globalAlpha = 1;
 
@@ -1094,12 +1104,12 @@ export const GameSandbox: FC = () => {
       ctx.fill();
     }
 
-    // Batch 3: Highlights (All)
+    // Batch 3: Highlights (All) - Optimized
     ctx.shadowBlur = 0;
-    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
     ctx.beginPath();
-    normalPlats.forEach(({ p, py }) => ctx.rect(p.x, py, p.w, 4));
-    boostPlats.forEach(({ p, py }) => ctx.rect(p.x, py, p.w, 4));
+    normalPlats.forEach(({ p, py }) => ctx.rect(p.x, py, p.w, 3));
+    boostPlats.forEach(({ p, py }) => ctx.rect(p.x, py, p.w, 3));
     ctx.fill();
 
     s.enemies.forEach(e => {
@@ -1172,21 +1182,30 @@ export const GameSandbox: FC = () => {
       ctx.restore();
     });
 
-    ctx.fillStyle = "#60a5fa";
-    ctx.shadowColor = "#60a5fa";
-    ctx.shadowBlur = 10;
-    s.bullets.forEach(b => {
+    // --- BULLETS (OPTIMIZED) ---
+    if (s.bullets.length > 0) {
+      ctx.fillStyle = "#60a5fa";
+      ctx.shadowColor = "#60a5fa";
+      ctx.shadowBlur = 10;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+      s.bullets.forEach(b => {
+        ctx.moveTo(b.x + 4, b.y);
+        ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+      });
       ctx.fill();
-      ctx.globalAlpha = 0.5;
+
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#60a5fa";
       ctx.beginPath();
-      ctx.moveTo(b.x, b.y);
-      ctx.lineTo(b.x, b.y + 15);
+      s.bullets.forEach(b => {
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x, b.y + 12);
+      });
       ctx.stroke();
       ctx.globalAlpha = 1;
-    });
-    ctx.shadowBlur = 0;
+      ctx.shadowBlur = 0;
+    }
 
     s.collectibles.forEach(c => {
       if (!c.active) return;
@@ -1341,48 +1360,58 @@ export const GameSandbox: FC = () => {
     ctx.translate(-px, -py);
     ctx.globalAlpha = 1;
 
-    s.particles.forEach((p, i) => {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.life -= 0.03;
-      p.vy += 0.2;
-      if (p.life <= 0) {
-        s.particles.splice(i, 1);
-        return;
-      }
-      ctx.globalAlpha = p.life;
-      ctx.fillStyle = p.color;
+    // --- PARTICLES (OPTIMIZED) ---
+    if (s.particles.length > 0) {
       ctx.beginPath();
-      ctx.rect(p.x, p.y, p.size, p.size);
-      ctx.fill();
-    });
-    ctx.globalAlpha = 1;
+      for (let i = s.particles.length - 1; i >= 0; i--) {
+        const p = s.particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.035; // Slightly faster decay
+        p.vy += 0.22;
 
-    ctx.font = "900 16px 'Courier New', monospace";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    s.floatingTexts.forEach((t, i) => {
-      t.y += t.vy;
-      t.life -= 0.02;
-      if (t.life <= 0) {
-        s.floatingTexts.splice(i, 1);
-        return;
+        if (p.life <= 0) {
+          s.particles.splice(i, 1);
+          continue;
+        }
+
+        // Draw batch
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
       }
+      ctx.globalAlpha = 1;
+    }
 
-      ctx.save();
-      ctx.translate(t.x, t.y);
-      ctx.scale(t.scale, t.scale);
-
-      ctx.globalAlpha = t.life;
-      ctx.fillStyle = t.color;
+    // --- FLOATING TEXTS (BATCHED) ---
+    if (s.floatingTexts.length > 0) {
+      ctx.font = "900 16px 'Courier New', monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       ctx.strokeStyle = "black";
       ctx.lineWidth = 3;
-      ctx.strokeText(t.text, 0, 0);
-      ctx.fillText(t.text, 0, 0);
 
-      ctx.restore();
-    });
-    ctx.globalAlpha = 1;
+      for (let i = s.floatingTexts.length - 1; i >= 0; i--) {
+        const t = s.floatingTexts[i];
+        t.y += t.vy;
+        t.life -= 0.022;
+        if (t.life <= 0) {
+          s.floatingTexts.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.translate(t.x, t.y);
+        ctx.scale(t.scale, t.scale);
+        ctx.globalAlpha = t.life;
+        ctx.fillStyle = t.color;
+
+        ctx.strokeText(t.text, 0, 0);
+        ctx.fillText(t.text, 0, 0);
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+    }
 
     if (s.damageEffect > 0.01) {
       ctx.fillStyle = `rgba(255, 0, 0, ${s.damageEffect})`;
@@ -1484,8 +1513,8 @@ export const GameSandbox: FC = () => {
   const bossTargetKills = BASE_BOSS_ENEMIES + (Math.floor(level / 5)) - 1;
 
   return (
-    <div ref={containerRef} className="w-full h-full relative overflow-hidden font-mono select-none">
-      <canvas ref={canvasRef} className="block w-full h-full touch-none" />
+    <div ref={containerRef} className="w-full h-full relative overflow-hidden font-mono select-none" style={{ willChange: 'transform', transform: 'translateZ(0)' }}>
+      <canvas ref={canvasRef} className="block w-full h-full touch-none" style={{ imageRendering: 'pixelated' }} />
 
       {/* HUD */}
       {gameState === 'PLAYING' && (
