@@ -111,10 +111,10 @@ const LEVEL_THRESHOLD = 5000;
 const BASE_BOSS_ENEMIES = 5;
 
 const CHARACTERS = [
-  { name: "NEON", desc: "Balanced Adventurer", color: "#d946ef", jump: 16, speed: 1.8, fire: 0.42, hp: 2 },
-  { name: "SCORCH", desc: "Fast & Fragile", color: "#f43f5e", jump: 14, speed: 2.4, fire: 0.35, hp: 1 },
-  { name: "TITAN", desc: "Heavy Tank", color: "#3b82f6", jump: 15, speed: 1.4, fire: 0.50, hp: 4 },
-  { name: "GHOST", desc: "High Jumper", color: "#14F195", jump: 20, speed: 1.6, fire: 0.45, hp: 2 },
+  { name: "NEON", icon: "⚡", desc: "Balanced Adventurer", perk: "Starts with 1 Shield", bonus: 'shield' as const, color: "#d946ef", jump: 16, speed: 1.8, fire: 0.42, hp: 2 },
+  { name: "SCORCH", icon: "🔥", desc: "Fast & Glass Cannon", perk: "Double fire speed!", bonus: 'none' as const, color: "#f43f5e", jump: 14, speed: 2.4, fire: 0.35, hp: 1 },
+  { name: "TITAN", icon: "🛡️", desc: "Slow but Unbreakable", perk: "Starts with 2 Shields", bonus: 'shield2' as const, color: "#3b82f6", jump: 15, speed: 1.4, fire: 0.50, hp: 4 },
+  { name: "GHOST", icon: "👻", desc: "Floats like a ghost", perk: "Starts with Magnet!", bonus: 'magnet' as const, color: "#14F195", jump: 20, speed: 1.6, fire: 0.45, hp: 2 },
 ];
 
 const FUN_FACTS = [
@@ -143,7 +143,7 @@ export const GameSandbox: FC = () => {
   const [highScore, setHighScore] = useState(0);
   const [level, setLevel] = useState(1);
   const [hp, setHp] = useState(2);
-  const [gameState, setGameState] = useState<'START' | 'CHARACTER_SELECT' | 'PLAYING' | 'GAMEOVER'>('START');
+  const [gameState, setGameState] = useState<'START' | 'CHARACTER_SELECT' | 'PLAYING' | 'GAMEOVER'>('CHARACTER_SELECT');
   const [selectedCharIndex, setSelectedCharIndex] = useState(0);
   const [deathQuote, setDeathQuote] = useState("");
   const [bossProgress, setBossProgress] = useState(0);
@@ -302,6 +302,11 @@ export const GameSandbox: FC = () => {
 
     const character = CHARACTERS[selectedCharIndex];
     state.current.char = character;
+
+    // Apply starting bonus
+    if (character.bonus === 'shield') state.current.shield = 1;
+    if (character.bonus === 'shield2') state.current.shield = 2;
+    if (character.bonus === 'magnet') state.current.magnetTimer = 15;
 
     // Apply Upgrades
     const startHp = character.hp + upgrades.health;
@@ -1614,54 +1619,100 @@ export const GameSandbox: FC = () => {
 
       {/* CHARACTER SELECTION */}
       {gameState === 'CHARACTER_SELECT' && (
-        <div className="absolute inset-0 bg-slate-950 z-20 p-6 flex flex-col items-center animate-in fade-in zoom-in duration-300">
-          <h2 className="text-2xl font-black italic text-white tracking-tighter mb-6 mt-4">SELECT HERO</h2>
+        <div className="absolute inset-0 z-20 flex flex-col" style={{ background: 'linear-gradient(180deg, #030712 0%, #0f172a 60%, #1e1b4b 100%)' }}>
+          {/* Header */}
+          <div className="flex-shrink-0 text-center pt-4 pb-2">
+            <p className="text-[9px] uppercase tracking-[0.3em] text-slate-500 font-bold mb-1">Cyber Scroll</p>
+            <h2 className="text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 tracking-tight">SELECT HERO</h2>
+          </div>
 
-          <div className="grid grid-cols-2 gap-4 w-full max-w-[320px]">
+          {/* Character Cards */}
+          <div className="flex-shrink-0 grid grid-cols-4 gap-2 px-3 mt-2">
             {CHARACTERS.map((char, i) => (
               <button
                 key={char.name}
                 onClick={() => setSelectedCharIndex(i)}
-                className={`flex flex-col items-center p-3 rounded-2xl border-2 transition-all ${selectedCharIndex === i ? 'border-white bg-white/10 scale-105' : 'border-white/10 bg-black/40 hover:bg-white/5'}`}
+                className="flex flex-col items-center py-3 px-1 rounded-2xl border-2 transition-all"
+                style={{
+                  borderColor: selectedCharIndex === i ? char.color : 'rgba(255,255,255,0.08)',
+                  background: selectedCharIndex === i ? `${char.color}22` : 'rgba(0,0,0,0.4)',
+                  boxShadow: selectedCharIndex === i ? `0 0 18px ${char.color}55` : 'none',
+                  transform: selectedCharIndex === i ? 'scale(1.06)' : 'scale(1)',
+                }}
               >
                 <div
-                  className="w-12 h-12 rounded-xl mb-2 flex items-center justify-center text-2xl shadow-lg"
-                  style={{ backgroundColor: char.color, boxShadow: `0 0 20px ${char.color}44` }}
+                  className="w-10 h-10 rounded-xl mb-1 flex items-center justify-center text-2xl"
+                  style={{ backgroundColor: char.color, boxShadow: `0 0 12px ${char.color}66` }}
                 >
-                  {i === 0 ? "⚡" : i === 1 ? "🔥" : i === 2 ? "🛡️" : "👻"}
+                  {char.icon}
                 </div>
-                <div className="font-black text-white text-[10px] tracking-widest">{char.name}</div>
+                <div className="font-black text-white text-[9px] tracking-widest">{char.name}</div>
               </button>
             ))}
           </div>
 
-          <div className="mt-8 p-4 bg-white/5 border border-white/10 rounded-2xl w-full max-w-[320px] text-center">
-            <div className="text-xs font-black mb-1" style={{ color: CHARACTERS[selectedCharIndex].color }}>
-              {CHARACTERS[selectedCharIndex].name}
-            </div>
-            <p className="text-[10px] text-slate-400 mb-4">{CHARACTERS[selectedCharIndex].desc}</p>
+          {/* Detail Panel for selected character */}
+          {(() => {
+            const c = CHARACTERS[selectedCharIndex];
+            const maxJump = 20; const maxSpeed = 2.4; const maxHp = 4;
+            const barStyle = (val: number, max: number) => ({ width: `${(val / max) * 100}%`, backgroundColor: c.color });
+            return (
+              <div className="flex-1 overflow-y-auto px-4 mt-3">
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: c.color }}>{c.icon}</div>
+                    <div>
+                      <div className="font-black text-sm" style={{ color: c.color }}>{c.name}</div>
+                      <p className="text-[10px] text-slate-400">{c.desc}</p>
+                    </div>
+                  </div>
 
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[8px] font-bold text-slate-500 text-left px-2">
-              <div className="flex justify-between"><span>JUMP:</span> <span className="text-white">{CHARACTERS[selectedCharIndex].jump}</span></div>
-              <div className="flex justify-between"><span>SPEED:</span> <span className="text-white">{CHARACTERS[selectedCharIndex].speed}</span></div>
-              <div className="flex justify-between"><span>FIRE:</span> <span className="text-white">{(1 / CHARACTERS[selectedCharIndex].fire).toFixed(1)}/s</span></div>
-              <div className="flex justify-between"><span>HEALTH:</span> <span className="text-white">{CHARACTERS[selectedCharIndex].hp}</span></div>
-            </div>
+                  {/* Stat Bars */}
+                  <div className="space-y-2 mb-4">
+                    {[
+                      { label: 'JUMP', val: c.jump, max: maxJump },
+                      { label: 'SPEED', val: c.speed, max: maxSpeed },
+                      { label: 'FIRE', val: 1 - c.fire, max: 1 - 0.35 },
+                      { label: 'HEALTH', val: c.hp, max: maxHp },
+                    ].map(s => (
+                      <div key={s.label} className="flex items-center gap-2">
+                        <span className="text-[8px] font-black text-slate-400 w-10 uppercase">{s.label}</span>
+                        <div className="flex-1 bg-white/10 rounded-full h-1.5 overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500" style={barStyle(s.val, s.max)} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Perk */}
+                  <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 flex items-center gap-2">
+                    <span className="text-base">🎁</span>
+                    <div>
+                      <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Starting Bonus</p>
+                      <p className="text-[11px] font-black" style={{ color: c.color }}>{c.perk}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Footer Buttons */}
+          <div className="flex-shrink-0 px-4 pb-5 pt-3 flex flex-col gap-2">
+            <button
+              onClick={initGame}
+              className="w-full py-4 font-black text-xl rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all"
+              style={{ background: `linear-gradient(90deg, ${CHARACTERS[selectedCharIndex].color}, ${CHARACTERS[selectedCharIndex].color}bb)`, color: '#000', boxShadow: `0 0 24px ${CHARACTERS[selectedCharIndex].color}66` }}
+            >
+              PLAY AS {CHARACTERS[selectedCharIndex].name} {CHARACTERS[selectedCharIndex].icon}
+            </button>
+            <button
+              onClick={() => setShowShop(true)}
+              className="w-full py-2 bg-white/5 text-white font-bold text-xs rounded-full border border-white/10 hover:bg-white/10 active:scale-95 transition-all"
+            >
+              🛒 BIT SHOP ({lifetimeBits} BITS)
+            </button>
           </div>
-
-          <button
-            onClick={initGame}
-            className="w-full max-w-[200px] py-4 bg-white text-black font-black text-xl rounded-full shadow-[0_0_30px_rgba(255,255,255,0.4)] hover:scale-105 active:scale-95 transition-all mt-8"
-          >
-            CONFIRM
-          </button>
-
-          <button
-            onClick={() => setGameState('START')}
-            className="text-[10px] text-slate-500 font-bold mt-4 hover:text-white transition-colors"
-          >
-            ← BACK TO MENU
-          </button>
         </div>
       )}
 
