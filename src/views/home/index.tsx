@@ -110,6 +110,13 @@ const BOOSTERS = [
 const LEVEL_THRESHOLD = 5000;
 const BASE_BOSS_ENEMIES = 5;
 
+const CHARACTERS = [
+  { name: "NEON", desc: "Balanced Adventurer", color: "#d946ef", jump: 16, speed: 1.8, fire: 0.42, hp: 2 },
+  { name: "SCORCH", desc: "Fast & Fragile", color: "#f43f5e", jump: 14, speed: 2.4, fire: 0.35, hp: 1 },
+  { name: "TITAN", desc: "Heavy Tank", color: "#3b82f6", jump: 15, speed: 1.4, fire: 0.50, hp: 4 },
+  { name: "GHOST", desc: "High Jumper", color: "#14F195", jump: 20, speed: 1.6, fire: 0.45, hp: 2 },
+];
+
 const FUN_FACTS = [
   "💡 Solana uses Proof of History (PoH) to keep time on the blockchain!",
   "⚡ A Solana transaction uses less energy than two Google searches.",
@@ -136,7 +143,8 @@ export const GameSandbox: FC = () => {
   const [highScore, setHighScore] = useState(0);
   const [level, setLevel] = useState(1);
   const [hp, setHp] = useState(2);
-  const [gameState, setGameState] = useState<'START' | 'PLAYING' | 'GAMEOVER'>('START');
+  const [gameState, setGameState] = useState<'START' | 'CHARACTER_SELECT' | 'PLAYING' | 'GAMEOVER'>('START');
+  const [selectedCharIndex, setSelectedCharIndex] = useState(0);
   const [deathQuote, setDeathQuote] = useState("");
   const [bossProgress, setBossProgress] = useState(0);
   const [lifetimeBits, setLifetimeBits] = useState(0);
@@ -144,7 +152,7 @@ export const GameSandbox: FC = () => {
   const [showShop, setShowShop] = useState(false);
 
   const state = useRef({
-    player: { x: 0, y: 0, vx: 0, vy: 0, w: 24, h: 24, type: 0, trail: [] as { x: number, y: number, age: number }[] },
+    player: { x: 0, y: 0, vx: 0, vy: 0, w: 24, h: 24, type: 0, trail: [] as { x: number, y: number, age: number }[], color: '' },
     cameraY: 0,
     shake: 0,
     warpEffect: 0,
@@ -176,6 +184,7 @@ export const GameSandbox: FC = () => {
     bossFireIndex: 0,
     shield: 0,
     magnetTimer: 0,
+    char: CHARACTERS[0],
   });
 
   useEffect(() => {
@@ -291,8 +300,11 @@ export const GameSandbox: FC = () => {
     state.current.shield = 0;
     state.current.magnetTimer = 0;
 
+    const character = CHARACTERS[selectedCharIndex];
+    state.current.char = character;
+
     // Apply Upgrades
-    const startHp = 2 + upgrades.health;
+    const startHp = character.hp + upgrades.health;
     state.current.hp = startHp;
     state.current.maxHp = startHp;
     setHp(startHp);
@@ -305,11 +317,12 @@ export const GameSandbox: FC = () => {
       x: width / 2 - 12,
       y: height - 150,
       vx: 0,
-      vy: -15,
+      vy: -character.jump,
       w: 24,
       h: 24,
       type: 0,
-      trail: []
+      trail: [],
+      color: character.color
     };
 
     state.current.platforms = [];
@@ -639,7 +652,7 @@ export const GameSandbox: FC = () => {
     // --- PHYSICS & CONTROLS ---
 
     // Auto-Fire in Boss Mode (Player)
-    const fireDelay = Math.max(0.2, 0.4 - (upgrades.fireRate * 0.05));
+    const fireDelay = Math.max(0.15, s.char.fire - (upgrades.fireRate * 0.05));
     if (isBossLevel && s.gameTime - s.lastShotTime > fireDelay) {
       s.lastShotTime = s.gameTime;
       s.bullets.push({
@@ -660,8 +673,8 @@ export const GameSandbox: FC = () => {
       s.player.vx += diff * 0.15;
       s.player.vx *= 0.75;
     } else {
-      if (s.inputs.left) s.player.vx -= 1.8;
-      if (s.inputs.right) s.player.vx += 1.8;
+      if (s.inputs.left) s.player.vx -= s.char.speed;
+      if (s.inputs.right) s.player.vx += s.char.speed;
 
       // Handle Slippery Friction
       const onSlippery = s.platforms.some(p => p.isSlippery &&
@@ -897,7 +910,7 @@ export const GameSandbox: FC = () => {
           s.player.y + s.player.h < py + 25
         ) {
           const jumpBoost = 1 + (upgrades.jump * 0.05);
-          s.player.vy = (p.type === 1 ? -24 : -15) * jumpBoost;
+          s.player.vy = (p.type === 1 ? -(s.char.jump * 1.5) : -s.char.jump) * jumpBoost;
           playSound(p.type === 1 ? 'powerup' : 'jump');
           s.player.y = py - s.player.h;
           spawnParticles(s.player.x + s.player.w / 2, s.player.y + s.player.h, p.type === 1 ? '#fff' : theme.plat, p.type === 1 ? 20 : 12, 6);
@@ -1255,7 +1268,7 @@ export const GameSandbox: FC = () => {
         return;
       }
       ctx.globalAlpha = t.age * 0.4;
-      ctx.fillStyle = theme.player;
+      ctx.fillStyle = s.char.color;
       ctx.beginPath();
       ctx.roundRect(t.x, t.y, s.player.w, s.player.h, 4);
       ctx.fill();
@@ -1297,8 +1310,8 @@ export const GameSandbox: FC = () => {
       ctx.restore();
     }
 
-    ctx.fillStyle = theme.player;
-    ctx.shadowColor = theme.player;
+    ctx.fillStyle = s.char.color;
+    ctx.shadowColor = s.char.color;
     ctx.shadowBlur = 25;
 
     if (s.gameTime < s.invincibleUntil && Math.floor(s.gameTime) % 2 === 0) {
@@ -1584,7 +1597,7 @@ export const GameSandbox: FC = () => {
             <br />Boss Levels Auto-Fire!
           </p>
           <button
-            onClick={initGame}
+            onClick={() => setGameState('CHARACTER_SELECT')}
             className="w-full max-w-[200px] py-4 bg-white text-black font-black text-xl rounded-full shadow-[0_0_30px_rgba(255,255,255,0.4)] hover:scale-105 active:scale-95 transition-all"
           >
             PLAY
@@ -1595,6 +1608,59 @@ export const GameSandbox: FC = () => {
             className="w-full max-w-[200px] py-2 mt-4 bg-slate-800 text-white font-bold text-sm rounded-full border border-white/20 hover:bg-slate-700 active:scale-95 transition-all flex items-center justify-center gap-2"
           >
             🛒 SHOP ({lifetimeBits} BITS)
+          </button>
+        </div>
+      )}
+
+      {/* CHARACTER SELECTION */}
+      {gameState === 'CHARACTER_SELECT' && (
+        <div className="absolute inset-0 bg-slate-950 z-20 p-6 flex flex-col items-center animate-in fade-in zoom-in duration-300">
+          <h2 className="text-2xl font-black italic text-white tracking-tighter mb-6 mt-4">SELECT HERO</h2>
+
+          <div className="grid grid-cols-2 gap-4 w-full max-w-[320px]">
+            {CHARACTERS.map((char, i) => (
+              <button
+                key={char.name}
+                onClick={() => setSelectedCharIndex(i)}
+                className={`flex flex-col items-center p-3 rounded-2xl border-2 transition-all ${selectedCharIndex === i ? 'border-white bg-white/10 scale-105' : 'border-white/10 bg-black/40 hover:bg-white/5'}`}
+              >
+                <div
+                  className="w-12 h-12 rounded-xl mb-2 flex items-center justify-center text-2xl shadow-lg"
+                  style={{ backgroundColor: char.color, boxShadow: `0 0 20px ${char.color}44` }}
+                >
+                  {i === 0 ? "⚡" : i === 1 ? "🔥" : i === 2 ? "🛡️" : "👻"}
+                </div>
+                <div className="font-black text-white text-[10px] tracking-widest">{char.name}</div>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-8 p-4 bg-white/5 border border-white/10 rounded-2xl w-full max-w-[320px] text-center">
+            <div className="text-xs font-black mb-1" style={{ color: CHARACTERS[selectedCharIndex].color }}>
+              {CHARACTERS[selectedCharIndex].name}
+            </div>
+            <p className="text-[10px] text-slate-400 mb-4">{CHARACTERS[selectedCharIndex].desc}</p>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[8px] font-bold text-slate-500 text-left px-2">
+              <div className="flex justify-between"><span>JUMP:</span> <span className="text-white">{CHARACTERS[selectedCharIndex].jump}</span></div>
+              <div className="flex justify-between"><span>SPEED:</span> <span className="text-white">{CHARACTERS[selectedCharIndex].speed}</span></div>
+              <div className="flex justify-between"><span>FIRE:</span> <span className="text-white">{(1 / CHARACTERS[selectedCharIndex].fire).toFixed(1)}/s</span></div>
+              <div className="flex justify-between"><span>HEALTH:</span> <span className="text-white">{CHARACTERS[selectedCharIndex].hp}</span></div>
+            </div>
+          </div>
+
+          <button
+            onClick={initGame}
+            className="w-full max-w-[200px] py-4 bg-white text-black font-black text-xl rounded-full shadow-[0_0_30px_rgba(255,255,255,0.4)] hover:scale-105 active:scale-95 transition-all mt-8"
+          >
+            CONFIRM
+          </button>
+
+          <button
+            onClick={() => setGameState('START')}
+            className="text-[10px] text-slate-500 font-bold mt-4 hover:text-white transition-colors"
+          >
+            ← BACK TO MENU
           </button>
         </div>
       )}
@@ -1618,7 +1684,7 @@ export const GameSandbox: FC = () => {
           </div>
 
           <button
-            onClick={initGame}
+            onClick={() => setGameState('CHARACTER_SELECT')}
             className="w-full max-w-[200px] py-3 mt-8 bg-white text-black font-black text-lg rounded-full shadow-lg hover:bg-slate-200 active:scale-95 transition-all"
           >
             RETRY
