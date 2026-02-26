@@ -150,6 +150,135 @@ export const GameSandbox: FC = () => {
   const [lifetimeBits, setLifetimeBits] = useState(0);
   const [upgrades, setUpgrades] = useState({ jump: 0, fireRate: 0, health: 0 });
   const [showShop, setShowShop] = useState(false);
+  const [bgmEnabled, setBgmEnabled] = useState(true);
+  const bgmOscillatorsRef = useRef<OscillatorType[]>([]);
+  const bgmNodesRef = useRef<any[]>([]);
+
+  // BGM GENERATOR (SYNTHWAVE ARP)
+  const startBgm = useCallback(() => {
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'suspended' || !bgmEnabled) return;
+
+    // Stop any existing bgm
+    stopBgm();
+
+    const ctx = audioCtxRef.current;
+
+    // Tempo and sequencing
+    const tempo = 120;
+    const noteDuration = 60 / tempo / 4; // 16th notes
+
+    // Synthwave Arp Sequence (Minor Pentatonic)
+    const sequence = [
+      220.00, // A3
+      261.63, // C4
+      329.63, // E4
+      261.63, // C4
+      440.00, // A4
+      329.63, // E4
+      261.63, // C4
+      329.63, // E4
+
+      196.00, // G3
+      246.94, // B3
+      293.66, // D4
+      246.94, // B3
+      392.00, // G4
+      293.66, // D4
+      246.94, // B3
+      293.66, // D4
+
+      174.61, // F3
+      220.00, // A3
+      261.63, // C4
+      220.00, // A3
+      349.23, // F4
+      261.63, // C4
+      220.00, // A3
+      261.63, // C4
+
+      220.00, // A3
+      261.63, // C4
+      329.63, // E4
+      261.63, // C4
+      440.00, // A4
+      329.63, // E4
+      493.88, // B4
+      329.63  // E4
+    ];
+
+    const startTime = ctx.currentTime + 0.1;
+    let time = startTime;
+
+    // Loop the sequence many, many times to act as continuous background
+    for (let loop = 0; loop < 100; loop++) {
+      for (let i = 0; i < sequence.length; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        osc.type = 'sawtooth';
+        osc.frequency.value = sequence[i];
+
+        filter.type = 'lowpass';
+        // Pluck envelope for filter
+        filter.frequency.setValueAtTime(2000, time);
+        filter.frequency.exponentialRampToValueAtTime(400, time + noteDuration * 0.8);
+
+        // Amplitude envelope
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.08, time + 0.02); // Soft attack
+        gain.gain.exponentialRampToValueAtTime(0.001, time + noteDuration * 0.9); // Release
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(time);
+        osc.stop(time + noteDuration);
+
+        bgmNodesRef.current.push({ osc, gain, filter });
+        time += noteDuration;
+      }
+    }
+  }, [bgmEnabled]);
+
+  const stopBgm = useCallback(() => {
+    bgmNodesRef.current.forEach(node => {
+      try {
+        node.osc.stop();
+        node.osc.disconnect();
+        node.gain.disconnect();
+        node.filter.disconnect();
+      } catch (e) {
+        // Ignore errors if already stopped
+      }
+    });
+    bgmNodesRef.current = [];
+  }, []);
+
+  // Handle BGM Toggle Lifecycle
+  useEffect(() => {
+    if (gameState === 'PLAYING' && bgmEnabled) {
+      // Need to ensure audio context is resumed
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().then(startBgm);
+      } else {
+        startBgm();
+      }
+    } else {
+      stopBgm();
+    }
+    return stopBgm;
+  }, [gameState, bgmEnabled, startBgm, stopBgm]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) stopBgm();
+      else if (gameState === 'PLAYING' && bgmEnabled) startBgm();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [gameState, bgmEnabled, startBgm, stopBgm]);
 
   const state = useRef({
     player: { x: 0, y: 0, vx: 0, vy: 0, w: 24, h: 24, type: 0, trail: [] as { x: number, y: number, age: number }[], color: '' },
@@ -1558,6 +1687,15 @@ export const GameSandbox: FC = () => {
             </div>
           </div>
 
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-2 pointer-events-auto">
+            <button
+              onClick={() => setBgmEnabled(!bgmEnabled)}
+              className={`w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md border transition-all ${bgmEnabled ? 'bg-white/10 border-white/30 text-white' : 'bg-black/50 border-white/10 text-white/50'}`}
+            >
+              {bgmEnabled ? '🔊' : '🔇'}
+            </button>
+          </div>
+
           {/* Level Progress Meter */}
           {!isBossLevel ? (
             <div className="mt-4">
@@ -1608,12 +1746,23 @@ export const GameSandbox: FC = () => {
             PLAY
           </button>
 
-          <button
-            onClick={() => setShowShop(true)}
-            className="w-full max-w-[200px] py-2 mt-4 bg-slate-800 text-white font-bold text-sm rounded-full border border-white/20 hover:bg-slate-700 active:scale-95 transition-all flex items-center justify-center gap-2"
-          >
-            🛒 SHOP ({lifetimeBits} BITS)
-          </button>
+          <div className="flex justify-center gap-4 mt-4 relative z-50">
+            <button
+              onClick={() => setShowShop(true)}
+              className="px-6 py-2 bg-slate-800 text-white font-bold text-sm rounded-full border border-white/20 hover:bg-slate-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              🛒 SHOP ({lifetimeBits} BITS)
+            </button>
+            <button
+              onClick={async () => {
+                initAudio();
+                setBgmEnabled(!bgmEnabled);
+              }}
+              className={`px-4 py-2 font-bold text-sm rounded-full border transition-all flex items-center justify-center cursor-pointer pointer-events-auto ${bgmEnabled ? 'bg-cyan-600/50 border-cyan-400 text-cyan-100' : 'bg-slate-800 border-white/20 text-slate-400'}`}
+            >
+              {bgmEnabled ? '🔊 MUSIC ON' : '🔇 MUSIC OFF'}
+            </button>
+          </div>
         </div>
       )}
 
