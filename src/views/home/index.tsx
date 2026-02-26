@@ -1901,7 +1901,7 @@ export const GameSandbox: FC = () => {
 
       {/* SHOP OVERLAY */}
       {showShop && (
-        <div className="absolute inset-0 bg-slate-950 z-30 p-6 flex flex-col animate-in slide-in-from-bottom duration-300">
+        <div className="absolute inset-0 bg-slate-950 z-[100] p-6 flex flex-col animate-in slide-in-from-bottom duration-300">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-black italic text-white tracking-tight">BIT SHOP</h2>
             <button
