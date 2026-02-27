@@ -151,134 +151,38 @@ export const GameSandbox: FC = () => {
   const [upgrades, setUpgrades] = useState({ jump: 0, fireRate: 0, health: 0 });
   const [showShop, setShowShop] = useState(false);
   const [bgmEnabled, setBgmEnabled] = useState(true);
-  const bgmOscillatorsRef = useRef<OscillatorType[]>([]);
-  const bgmNodesRef = useRef<any[]>([]);
+  const bgmRef = useRef<HTMLAudioElement | null>(null);
 
-  // BGM GENERATOR (SYNTHWAVE ARP)
-  const startBgm = useCallback(() => {
-    if (!audioCtxRef.current || audioCtxRef.current.state === 'suspended' || !bgmEnabled) return;
-
-    // Stop any existing bgm
-    stopBgm();
-
-    const ctx = audioCtxRef.current;
-
-    // Tempo and sequencing
-    const tempo = 120;
-    const noteDuration = 60 / tempo / 4; // 16th notes
-
-    // Synthwave Arp Sequence (Minor Pentatonic)
-    const sequence = [
-      220.00, // A3
-      261.63, // C4
-      329.63, // E4
-      261.63, // C4
-      440.00, // A4
-      329.63, // E4
-      261.63, // C4
-      329.63, // E4
-
-      196.00, // G3
-      246.94, // B3
-      293.66, // D4
-      246.94, // B3
-      392.00, // G4
-      293.66, // D4
-      246.94, // B3
-      293.66, // D4
-
-      174.61, // F3
-      220.00, // A3
-      261.63, // C4
-      220.00, // A3
-      349.23, // F4
-      261.63, // C4
-      220.00, // A3
-      261.63, // C4
-
-      220.00, // A3
-      261.63, // C4
-      329.63, // E4
-      261.63, // C4
-      440.00, // A4
-      329.63, // E4
-      493.88, // B4
-      329.63  // E4
-    ];
-
-    const startTime = ctx.currentTime + 0.1;
-    let time = startTime;
-
-    // Loop the sequence many, many times to act as continuous background
-    for (let loop = 0; loop < 100; loop++) {
-      for (let i = 0; i < sequence.length; i++) {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const filter = ctx.createBiquadFilter();
-
-        osc.type = 'sawtooth';
-        osc.frequency.value = sequence[i];
-
-        filter.type = 'lowpass';
-        // Pluck envelope for filter
-        filter.frequency.setValueAtTime(2000, time);
-        filter.frequency.exponentialRampToValueAtTime(400, time + noteDuration * 0.8);
-
-        // Amplitude envelope
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.08, time + 0.02); // Soft attack
-        gain.gain.exponentialRampToValueAtTime(0.001, time + noteDuration * 0.9); // Release
-
-        osc.connect(filter);
-        filter.connect(gain);
-        gain.connect(ctx.destination);
-
-        osc.start(time);
-        osc.stop(time + noteDuration);
-
-        bgmNodesRef.current.push({ osc, gain, filter });
-        time += noteDuration;
-      }
+  // Initialize actual background music
+  useEffect(() => {
+    if (!bgmRef.current) {
+      const audio = new Audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3");
+      audio.loop = true;
+      audio.volume = 0.35;
+      bgmRef.current = audio;
     }
-  }, [bgmEnabled]);
-
-  const stopBgm = useCallback(() => {
-    bgmNodesRef.current.forEach(node => {
-      try {
-        node.osc.stop();
-        node.osc.disconnect();
-        node.gain.disconnect();
-        node.filter.disconnect();
-      } catch (e) {
-        // Ignore errors if already stopped
-      }
-    });
-    bgmNodesRef.current = [];
   }, []);
 
   // Handle BGM Toggle Lifecycle
   useEffect(() => {
     if (gameState === 'PLAYING' && bgmEnabled) {
-      // Need to ensure audio context is resumed
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume().then(startBgm);
-      } else {
-        startBgm();
-      }
+      bgmRef.current?.play().catch(e => console.log("BGM Play Error:", e));
     } else {
-      stopBgm();
+      bgmRef.current?.pause();
     }
-    return stopBgm;
-  }, [gameState, bgmEnabled, startBgm, stopBgm]);
+  }, [gameState, bgmEnabled]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.hidden) stopBgm();
-      else if (gameState === 'PLAYING' && bgmEnabled) startBgm();
+      if (document.hidden) {
+        bgmRef.current?.pause();
+      } else if (gameState === 'PLAYING' && bgmEnabled) {
+        bgmRef.current?.play().catch(() => { });
+      }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [gameState, bgmEnabled, startBgm, stopBgm]);
+  }, [gameState, bgmEnabled]);
 
   const state = useRef({
     player: { x: 0, y: 0, vx: 0, vy: 0, w: 24, h: 24, type: 0, trail: [] as { x: number, y: number, age: number }[], color: '' },
@@ -366,6 +270,12 @@ export const GameSandbox: FC = () => {
   const playTone = (freq: number, type: OscillatorType, duration: number, vol: number = 0.1) => {
     if (!audioCtxRef.current) return;
     const ctx = audioCtxRef.current;
+
+    // Safely resume audio context if suspended so SFX work reliably
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => { });
+    }
+
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
