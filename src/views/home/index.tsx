@@ -158,14 +158,15 @@ export const GameSandbox: FC = () => {
     if (!bgmRef.current) {
       const audio = new Audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3");
       audio.loop = true;
-      audio.volume = 0.35;
+      audio.volume = 0.15; // Lowered volume so sound effects stand out
       bgmRef.current = audio;
     }
   }, []);
 
   // Handle BGM Toggle Lifecycle
   useEffect(() => {
-    if (gameState === 'PLAYING' && bgmEnabled) {
+    // Play continuously as long as bgmEnabled is true
+    if (bgmEnabled) {
       bgmRef.current?.play().catch(e => console.log("BGM Play Error:", e));
     } else {
       bgmRef.current?.pause();
@@ -176,7 +177,7 @@ export const GameSandbox: FC = () => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
         bgmRef.current?.pause();
-      } else if (gameState === 'PLAYING' && bgmEnabled) {
+      } else if (bgmEnabled) {
         bgmRef.current?.play().catch(() => { });
       }
     };
