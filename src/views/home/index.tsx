@@ -143,7 +143,7 @@ export const GameSandbox: FC = () => {
   const [highScore, setHighScore] = useState(0);
   const [level, setLevel] = useState(1);
   const [hp, setHp] = useState(2);
-  const [gameState, setGameState] = useState<'START' | 'CHARACTER_SELECT' | 'PLAYING' | 'GAMEOVER'>('CHARACTER_SELECT');
+  const [gameState, setGameState] = useState<'START' | 'CHARACTER_SELECT' | 'PLAYING' | 'GAMEOVER' | 'PAUSED'>('CHARACTER_SELECT');
   const [selectedCharIndex, setSelectedCharIndex] = useState(0);
   const [deathQuote, setDeathQuote] = useState("");
   const [bossProgress, setBossProgress] = useState(0);
@@ -153,19 +153,16 @@ export const GameSandbox: FC = () => {
   const [bgmEnabled, setBgmEnabled] = useState(true);
   const bgmRef = useRef<HTMLAudioElement | null>(null);
 
-  // Initialize actual background music
   useEffect(() => {
     if (!bgmRef.current) {
       const audio = new Audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3");
       audio.loop = true;
-      audio.volume = 0.15; // Lowered volume so sound effects stand out
+      audio.volume = 0.15;
       bgmRef.current = audio;
     }
   }, []);
 
-  // Handle BGM Toggle Lifecycle
   useEffect(() => {
-    // Play continuously as long as bgmEnabled is true
     if (bgmEnabled) {
       bgmRef.current?.play().catch(e => console.log("BGM Play Error:", e));
     } else {
@@ -272,7 +269,6 @@ export const GameSandbox: FC = () => {
     if (!audioCtxRef.current) return;
     const ctx = audioCtxRef.current;
 
-    // Safely resume audio context if suspended so SFX work reliably
     if (ctx.state === 'suspended') {
       ctx.resume().catch(() => { });
     }
@@ -1501,6 +1497,8 @@ export const GameSandbox: FC = () => {
       if (e.key === 'ArrowLeft') state.current.inputs.left = true;
       if (e.key === 'ArrowRight') state.current.inputs.right = true;
       if (e.key === ' ' && gameState === 'GAMEOVER') initGame();
+      if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && gameState === 'PLAYING') setGameState('PAUSED');
+      if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape' || e.key === ' ') && gameState === 'PAUSED') setGameState('PLAYING');
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') state.current.inputs.left = false;
@@ -1598,7 +1596,13 @@ export const GameSandbox: FC = () => {
             </div>
           </div>
 
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-2 pointer-events-auto">
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-2 pointer-events-auto z-50">
+            <button
+              onClick={() => setGameState('PAUSED')}
+              className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md border bg-white/10 border-white/30 text-white transition-all hover:scale-110"
+            >
+              ⏸️
+            </button>
             <button
               onClick={() => setBgmEnabled(!bgmEnabled)}
               className={`w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md border transition-all ${bgmEnabled ? 'bg-white/10 border-white/30 text-white' : 'bg-black/50 border-white/10 text-white/50'}`}
@@ -1773,6 +1777,25 @@ export const GameSandbox: FC = () => {
               🛒 BIT SHOP ({lifetimeBits} BITS)
             </button>
           </div>
+        </div>
+      )}
+
+      {/* PAUSE OVERLAY */}
+      {gameState === 'PAUSED' && !showShop && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-20 p-6 text-center backdrop-blur-sm animate-in fade-in duration-300">
+          <h2 className="text-5xl font-black text-white mb-6 uppercase italic tracking-wider drop-shadow-xl">PAUSED</h2>
+          <button
+            onClick={() => setGameState('PLAYING')}
+            className="w-full max-w-[200px] py-4 bg-white text-black font-black text-xl rounded-full shadow-[0_0_30px_rgba(255,255,255,0.4)] hover:scale-105 active:scale-95 transition-all mb-4"
+          >
+            RESUME
+          </button>
+          <button
+            onClick={() => setGameState('START')}
+            className="w-full max-w-[200px] py-2 bg-slate-800 text-white font-bold text-sm rounded-full border border-white/20 hover:bg-slate-700 active:scale-95 transition-all"
+          >
+            QUIT TO MENU
+          </button>
         </div>
       )}
 
